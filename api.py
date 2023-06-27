@@ -110,7 +110,7 @@ async def upload_file(
         f.write(file_content)
 
     vs_path = get_vs_path(knowledge_base_id)
-    vs_path, loaded_files = local_doc_qa.init_knowledge_vector_store([file_path], vs_path)
+    vs_path, loaded_files = local_doc_qa.init_knowledge_vector_store([file_path], vs_path)  # 处理函数
     if len(loaded_files) > 0:
         file_status = f"文件 {file.filename} 已上传至新的知识库，并已加载知识库，请开始提问。"
         return BaseResponse(code=200, msg=file_status)

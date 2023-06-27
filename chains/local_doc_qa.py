@@ -104,7 +104,18 @@ def generate_prompt(related_docs: List[str],
                     query: str,
                     prompt_template: str = PROMPT_TEMPLATE, ) -> str:
     context = "\n".join([doc.page_content for doc in related_docs])
+    # prompt_template = """ 已知信息：{context}  ....问题是：{question}""".
     prompt = prompt_template.replace("{question}", query).replace("{context}", context)
+    # 总结： QA问答使用该模板合适，如果做情感分析是不是修改成
+    # 模板 = “已下面这些情感分析示例
+    # {示例: 结果}\n
+    # 请问句子
+    # {query}
+    # 的情感是:” 会合适些？参考
+    # 52
+    # AI：怎么判断模型的in - context
+    # learning的能力？
+
     return prompt
 
 
@@ -143,6 +154,7 @@ class LocalDocQA:
                                     sentence_size=SENTENCE_SIZE):
         loaded_files = []
         failed_files = []
+        ## 加载文件，生成docs
         if isinstance(filepath, str):
             if not os.path.exists(filepath):
                 print("路径不存在")
@@ -182,6 +194,7 @@ class LocalDocQA:
                 except Exception as e:
                     logger.error(e)
                     logger.info(f"{file} 未能成功加载")
+        # 对加载完成的文件，生成向量库
         if len(docs) > 0:
             logger.info("文件加载完毕，正在生成向量库")
             if vs_path and os.path.isdir(vs_path) and "index.faiss" in os.listdir(vs_path):
@@ -193,10 +206,16 @@ class LocalDocQA:
                     vs_path = os.path.join(KB_ROOT_PATH,
                                            f"""{"".join(lazy_pinyin(os.path.splitext(file)[0]))}_FAISS_{datetime.datetime.now().strftime("%Y%m%d_%H%M%S")}""",
                                            "vector_store")
-                vector_store = MyFAISS.from_documents(docs, self.embeddings)  # docs 为Document列表
+
+                # #利用embedding模型对分割好的子句embedding并建立faiss索引，这里看着只有一行代码，是因为langchain封装了faiss的建立索引的过程.
+                vector_store = MyFAISS.from_documents(docs, self.embeddings)  # Embeedding模型GanymedeNil/text2vec-large-chinese是一个setence embedding model
+                # 总结：怎么根据自己的任务切割文本，设置切割方式(文中按常用断句的标点符号切割，是不是有的任务需要段落切割更合适？)，
+                # 切割长度(问答100个字合适，你生成故事是不是就不太合适？)，会极大的影响构建的知识库质量。
                 torch_gc()
 
-            vector_store.save_local(vs_path)
+            vector_store.save_local(vs_path) #保存本地磁盘
+
+
             return vs_path, loaded_files
         else:
             logger.info("文件均未成功加载，请检查依赖包或替换为其他文件再次上传。")
@@ -224,13 +243,15 @@ class LocalDocQA:
             return None, [one_title]
 
     def get_knowledge_based_answer(self, query, vs_path, chat_history=[], streaming: bool = STREAMING):
-        vector_store = load_vector_store(vs_path, self.embeddings)
+        vector_store = load_vector_store(vs_path, self.embeddings) #加载指定的知识库，并制定embedding模型
+        # 配置相关参数
         vector_store.chunk_size = self.chunk_size
         vector_store.chunk_conent = self.chunk_conent
         vector_store.score_threshold = self.score_threshold
-        related_docs_with_score = vector_store.similarity_search_with_score(query, k=self.top_k)
+        related_docs_with_score = vector_store.similarity_search_with_score(query, k=self.top_k) #拿着输入的内容，找topk (这就是核心代码了呗)
         torch_gc()
         if len(related_docs_with_score) > 0:
+            # 联合找到的内容和query一起，按照模板生成新的prompt，很简单相信大家一看就懂
             prompt = generate_prompt(related_docs_with_score, query)
         else:
             prompt = query
